@@ -1,48 +1,28 @@
-from flask import Flask, request, jsonify
-import pandas as pd
+# backend/app.py
 import os
-from openai import OpenAI
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+from chatbot import chatbot_response
 
-# Flask App starten
-app = Flask(__name__)
-
-# OpenAI Client
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-# FAQ laden
-faq_df = pd.read_csv("faq.csv")  # Stelle sicher, dass faq.csv im gleichen Ordner liegt
-
-def search_faq(user_input):
-    """
-    Schnelle FAQ-Abfrage
-    """
-    for _, row in faq_df.iterrows():
-        if row['frage'].lower() in user_input.lower():
-            return row['antwort']
-    return None
-
-def get_ai_answer(user_input):
-    """
-    KI-Antwort, nur aufgerufen, wenn FAQ nichts liefert
-    """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": user_input}],
-            timeout=15  # maximal 15 Sekunden warten
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Fehler bei der KI-Antwort: {str(e)}"
+app = Flask(__name__, static_folder="../frontend", static_url_path="/")
+CORS(app)  # erlaubt Zugriff vom Frontend (falls du Frontend separat hostest)
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.json
-    user_input = data.get("message", "")
-    answer = search_faq(user_input)
-    if not answer:
-        answer = get_ai_answer(user_input)
+    data = request.get_json() or {}
+    msg = data.get("message", "").strip()
+    if not msg:
+        return jsonify({"answer": "Bitte gib eine Frage ein."}), 400
+    answer = chatbot_response(msg)
     return jsonify({"answer": answer})
 
+# optional: wenn du den Browser direkt auf http://localhost:5000 öffnest,
+# liefert Flask die frontend/index.html zurück:
+@app.route("/")
+def index():
+    return send_from_directory(app.static_folder, "index.html")
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    # debug=True zeigt Fehler direkt im Terminal; für Entwicklung sinnvoll
+    app.run(host="0.0.0.0", port=port, debug=True)
